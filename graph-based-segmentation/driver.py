@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
-from GraphMaker import GraphMaker
+from Graph import Graph
 
 # Configure logging
 logging.basicConfig(
@@ -30,27 +30,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class NewCutUI(QMainWindow):
+class GUI(QMainWindow):
     """
     A PyQt5-based user interface for graph-based image segmentation.
 
     Manages user interactions for adding seeds and segmenting images.
     """
 
-    def __init__(self, graph_maker: Optional[GraphMaker] = None):
+    def __init__(self, graph: Optional[Graph] = None):
         """
         Initialize the UI.
 
         Args:
-            graph_maker (Optional[GraphMaker]): An optional GraphMaker instance
+            graph (Optional[Graph]): An optional Graph instance
         """
         super().__init__()
 
-        # Use provided graph_maker or create a new instance
-        self.graph_maker = graph_maker or GraphMaker()
+        # Use provided graph or create a new instance
+        self.graph = graph or Graph()
 
         # Current seed mode (foreground or background)
-        self.seed_mode = self.graph_maker.foreground
+        self.seed_mode = self.graph.foreground
 
         # UI components
         self.seed_label: Optional[QLabel] = None
@@ -163,21 +163,21 @@ class NewCutUI(QMainWindow):
     @pyqtSlot()
     def on_foreground(self):
         """Set seed mode to foreground."""
-        self.seed_mode = self.graph_maker.foreground
+        self.seed_mode = self.graph.foreground
         self._update_button_styles()
         logger.info("Foreground seed mode activated")
 
     @pyqtSlot()
     def on_background(self):
         """Set seed mode to background."""
-        self.seed_mode = self.graph_maker.background
+        self.seed_mode = self.graph.background
         self._update_button_styles()
         logger.info("Background seed mode activated")
 
     def _update_button_styles(self):
         """Update button styles based on current seed mode."""
         if self.foreground_button and self.background_button:
-            if self.seed_mode == self.graph_maker.foreground:
+            if self.seed_mode == self.graph.foreground:
                 self.foreground_button.setStyleSheet("background-color: gray")
                 self.background_button.setStyleSheet("background-color: white")
             else:
@@ -188,7 +188,7 @@ class NewCutUI(QMainWindow):
     def on_clear(self):
         """Clear all seeds from the image."""
         try:
-            self.graph_maker.clear_seeds()
+            self.graph.clear_seeds()
             self._update_image_display()
             logger.info("All seeds cleared")
         except Exception as e:
@@ -199,7 +199,7 @@ class NewCutUI(QMainWindow):
     def on_segment(self):
         """Perform image segmentation."""
         try:
-            self.graph_maker.create_graph()
+            self.graph.create_graph()
             self._update_image_display()
             logger.info("Image segmentation completed")
         except Exception as e:
@@ -219,9 +219,9 @@ class NewCutUI(QMainWindow):
 
             if file_path:
                 logger.info(f"Opening image: {file_path}")
-                self.graph_maker.load_image(file_path)
+                self.graph.load_image(file_path)
 
-                if self.graph_maker.image is not None:
+                if self.graph.image is not None:
                     self._update_image_display()
                 else:
                     raise ValueError("Failed to load image")
@@ -241,7 +241,7 @@ class NewCutUI(QMainWindow):
             )
 
             if file_path:
-                self.graph_maker.save_image(file_path)
+                self.graph.save_image(file_path)
                 logger.info(f"Image saved to: {file_path}")
         except Exception as e:
             logger.error(f"Image saving error: {e}")
@@ -255,19 +255,11 @@ class NewCutUI(QMainWindow):
         """Handle mouse drag event for adding seeds."""
         self._add_seed_at_position(event.x(), event.y())
 
-    # def _add_seed_at_position(self, x: int, y: int):
-    #     """Add a seed at the specified position."""
-    #     try:
-    #         self.graph_maker.add_seed(x, y, self.seed_mode)
-    #         self._update_image_display()
-    #     except Exception as e:
-    #         logger.error(f"Error adding seed: {e}")
-
     def _add_seed_at_position(self, x: int, y: int):
         """Add a seed at the specified position."""
         try:
             # Directly use the raw mouse coordinates without scaling
-            self.graph_maker.add_seed(x, y, self.seed_mode)
+            self.graph.add_seed(x, y, self.seed_mode)
             self._update_image_display()
         except Exception as e:
             logger.error(f"Error adding seed: {e}")
@@ -275,9 +267,9 @@ class NewCutUI(QMainWindow):
     def _update_image_display(self):
         """Update seed and segmented image displays."""
         if self.seed_label and self.segment_label:
-            seed_image = self.graph_maker.get_image_with_overlay(self.graph_maker.seeds)
-            segmented_image = self.graph_maker.get_image_with_overlay(
-                self.graph_maker.segmented
+            seed_image = self.graph.get_image_with_overlay(self.graph.seeds)
+            segmented_image = self.graph.get_image_with_overlay(
+                self.graph.segmented
             )
 
             seed_pixmap = QPixmap.fromImage(self._convert_cv_to_qimage(seed_image))
@@ -333,7 +325,7 @@ def main():
     """Main entry point for the application."""
     try:
         app = QApplication(sys.argv)
-        ui = NewCutUI()
+        ui = GUI()
         ui.show()
         sys.exit(app.exec_())
     except Exception as e:

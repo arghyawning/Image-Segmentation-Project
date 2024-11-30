@@ -8,7 +8,7 @@ from typing import List, Tuple, Optional, Union
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-class GraphMaker:
+class Graph:
     """
     A class for performing graph-based image segmentation using max-flow/min-cut algorithm.
     
@@ -33,7 +33,7 @@ class GraphMaker:
     }
     
     def __init__(self):
-        """Initialize GraphMaker with default attributes."""
+        """Initialize Graph with default attributes."""
         self.image: Optional[np.ndarray] = None
         self.graph: Optional[np.ndarray] = None
         self.overlay: Optional[np.ndarray] = None
@@ -311,13 +311,12 @@ class GraphMaker:
         
         self.current_overlay = overlay_type
 
-    def save_image(self, filename: str, mask_only: bool = False) -> None:
+    def save_image(self, filename: str) -> None:
         """
         Save the segmented image.
         
         Args:
             filename (str): Output filename
-            mask_only (bool, optional): Save only masked region. Defaults to False.
         
         Raises:
             ValueError: If image hasn't been segmented
@@ -325,13 +324,8 @@ class GraphMaker:
         if self.mask is None:
             raise ValueError("Please segment the image before saving.")
         
-        if mask_only:
-            # Save only the masked portion
-            segmented = np.zeros_like(self.image)
-            np.copyto(segmented, self.image, where=self.mask)
-        else:
-            # Save full image with segmentation
-            segmented = self.image.copy()
+        segmented = np.zeros_like(self.image)
+        np.copyto(segmented, self.image, where=self.mask)
         
         cv2.imwrite(filename, segmented)
 
