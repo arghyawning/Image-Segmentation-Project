@@ -151,7 +151,13 @@ class GUI(QMainWindow):
                 button.clicked.connect(slot)
                 button_layout.addWidget(button)
 
+        # Download button
+        self.download_button = QPushButton("Download Overlaid Image")
+        self.download_button.clicked.connect(self.on_download)
+        button_layout.addWidget(self.download_button)
+
         button_layout.addStretch()
+
         return button_layout
 
     def _create_image_layout(self) -> QHBoxLayout:
@@ -180,6 +186,36 @@ class GUI(QMainWindow):
         image_layout.addStretch()
 
         return image_layout
+
+    @pyqtSlot()
+    def on_download(self):
+        """Download the overlaid image."""
+        if self.background_image is None or self.graph.mask is None:
+            self._show_error(
+                "Download Error",
+                "Please load a background image and segment the image first.",
+            )
+            return
+
+        try:
+            overlay_image = self._create_overlay(self.background_image)
+            if overlay_image is None:
+                self._show_error("Download Error", "Failed to create overlay image.")
+                return
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Overlaid Image",
+                "",
+                "Image Files (*.png *.jpg *.bmp);;All Files (*)",
+            )
+
+            if file_path:
+                cv2.imwrite(file_path, overlay_image)
+                logger.info(f"Overlaid image saved to: {file_path}")
+        except Exception as e:
+            logger.error(f"Image download error: {e}")
+            self._show_error("Download Error", str(e))
 
     @pyqtSlot()
     def on_foreground(self):
