@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import cv2
-from PyQt5.QtCore import pyqtSlot
+from PyQt5.QtCore import pyqtSlot, Qt
 from PyQt5.QtGui import QPixmap, QImage, QIcon, QMouseEvent
 from PyQt5.QtWidgets import (
     # QApplication,
@@ -52,11 +52,16 @@ class GUI(QMainWindow):
         # Current seed mode (foreground or background)
         self.seed_mode = self.graph.foreground
 
+        # Background image
+        self.background_image: Optional[np.ndarray] = None
+
         # UI components
         self.seed_label: Optional[QLabel] = None
         self.segment_label: Optional[QLabel] = None
+        self.overlay_label: Optional[QLabel] = None  # New label for overlay
         self.foreground_button: Optional[QPushButton] = None
         self.background_button: Optional[QPushButton] = None
+        self.load_background_button: Optional[QPushButton] = None  # New button
 
         self._setup_ui()
 
@@ -119,12 +124,22 @@ class GUI(QMainWindow):
         self.background_button.clicked.connect(self.on_background)
         self.background_button.setStyleSheet("background-color: white")
 
+        # Load Background Button
+        self.load_background_button = QPushButton("Load Background Image")
+        self.load_background_button.clicked.connect(self.on_load_background)
+
         # Other buttons
         buttons = [
             (self.foreground_button, "Add Foreground Seeds"),
             (self.background_button, "Add Background Seeds"),
+            (self.load_background_button, "Load Background Image"),
             (QPushButton("Clear All Seeds"), "Clear All Seeds", self.on_clear),
             (QPushButton("Segment Image"), "Segment Image", self.on_segment),
+            (
+                QPushButton("Overlay on Background"),
+                "Overlay on Background",
+                self.on_overlay,
+            ),  # New button
         ]
 
         for button_config in buttons:
@@ -151,11 +166,17 @@ class GUI(QMainWindow):
         self.seed_label = QLabel("Seed Image")
         self.seed_label.mousePressEvent = self.mouse_down
         self.seed_label.mouseMoveEvent = self.mouse_drag
+        self.seed_label.setAlignment(Qt.AlignCenter)  # Center images
 
         self.segment_label = QLabel("Segmented Image")
+        self.segment_label.setAlignment(Qt.AlignCenter)
+
+        self.overlay_label = QLabel("Overlay on Background")  # New label
+        self.overlay_label.setAlignment(Qt.AlignCenter)
 
         image_layout.addWidget(self.seed_label)
         image_layout.addWidget(self.segment_label)
+        image_layout.addWidget(self.overlay_label)  # Add new label
         image_layout.addStretch()
 
         return image_layout
@@ -264,23 +285,99 @@ class GUI(QMainWindow):
         except Exception as e:
             logger.error(f"Error adding seed: {e}")
 
-    def _update_image_display(self):
-        """Update seed and segmented image displays."""
-        if self.seed_label and self.segment_label:
-            seed_image = self.graph.get_image_with_overlay(self.graph.seeds)
-            segmented_image = self.graph.get_image_with_overlay(self.graph.segmented)
-
-            seed_pixmap = QPixmap.fromImage(self._convert_cv_to_qimage(seed_image))
-            segmented_pixmap = QPixmap.fromImage(
-                self._convert_cv_to_qimage(segmented_image)
+    @pyqtSlot()
+    def on_load_background(self):
+        """Load a background image for overlay."""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Load Background Image",
+                "",
+                "Image Files (*.png *.jpg *.bmp *.jpeg);;All Files (*)",
             )
 
-            # Resize QLabel to match the image size
-            self.seed_label.setPixmap(seed_pixmap)
-            self.seed_label.setFixedSize(seed_pixmap.size())
+            if file_path:
+                self.background_image = cv2.imread(file_path)
+                if self.background_image is None:
+                    raise IOError(f"Unable to read background image file: {file_path}")
+                logger.info(f"Background image loaded: {file_path}")
+                self._update_image_display()
+        except Exception as e:
+            logger.error(f"Background image loading error: {e}")
+            self._show_error("Background Image Loading Error", str(e))
 
-            self.segment_label.setPixmap(segmented_pixmap)
-            self.segment_label.setFixedSize(segmented_pixmap.size())
+    @pyqtSlot()
+    def on_overlay(self):
+        """Overlay the segmented image on the background image."""
+        if self.background_image is None:
+            self._show_error("Overlay Error", "Please load a background image first.")
+            return
+        if self.graph.mask is None:
+            self._show_error("Overlay Error", "Please segment the image first.")
+            return
+
+        try:
+            overlay_image = self._create_overlay(self.background_image)
+            self._update_overlay_display(overlay_image)
+            logger.info("Segmented image overlaid on background.")
+        except Exception as e:
+            logger.error(f"Overlay creation error: {e}")
+            self._show_error("Overlay Error", str(e))
+
+    def _create_overlay(self, background: np.ndarray) -> np.ndarray:
+        """Create the overlay image, resizing background to match original image."""
+        if self.graph.image is None:
+            return None  # Handle case where original image isn't loaded
+
+        segmented = np.zeros_like(self.graph.image)
+        np.copyto(segmented, self.graph.image, where=self.graph.mask)
+
+        # Resize background image to match the original image size
+        background = cv2.resize(
+            background, (self.graph.image.shape[1], self.graph.image.shape[0])
+        )
+
+        # Alpha blending (simple overlay)
+        alpha = 0.7  # Adjust transparency as needed.
+        overlay = cv2.addWeighted(background, 1 - alpha, segmented, alpha, 0)
+        return overlay
+
+    def _update_image_display(self):
+        """Update seed and segmented image displays."""
+        if not (self.seed_label and self.segment_label):
+            return  # Handle labels not being initialized yet
+
+        seed_image = self.graph.get_image_with_overlay(self.graph.seeds)
+        segmented_image = self.graph.get_image_with_overlay(self.graph.segmented)
+
+        seed_pixmap = QPixmap.fromImage(self._convert_cv_to_qimage(seed_image))
+        segmented_pixmap = QPixmap.fromImage(
+            self._convert_cv_to_qimage(segmented_image)
+        )
+
+        # Resize QLabel to match the image size.  Handles different image sizes.
+        self.seed_label.setPixmap(seed_pixmap)
+        self.seed_label.setFixedSize(seed_pixmap.size())
+
+        self.segment_label.setPixmap(segmented_pixmap)
+        self.segment_label.setFixedSize(segmented_pixmap.size())
+
+        # Update the overlay if background image is loaded
+        if self.background_image is not None and self.graph.mask is not None:
+            overlay_image = self._create_overlay(self.background_image)
+            if (
+                overlay_image is not None
+            ):  # Check for None, in case original image wasn't loaded
+                self._update_overlay_display(overlay_image)
+
+    def _update_overlay_display(self, overlay_image: np.ndarray):
+        """Update the overlay image display."""
+        if self.overlay_label:
+            overlay_pixmap = QPixmap.fromImage(
+                self._convert_cv_to_qimage(overlay_image)
+            )
+            self.overlay_label.setPixmap(overlay_pixmap)
+            self.overlay_label.setFixedSize(overlay_pixmap.size())
 
     @staticmethod
     def _convert_cv_to_qimage(cv_image: Optional[np.ndarray]) -> QImage:
